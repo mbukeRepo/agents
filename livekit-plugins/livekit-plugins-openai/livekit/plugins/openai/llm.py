@@ -29,17 +29,14 @@ from livekit.agents import (
     APITimeoutError,
     llm,
 )
-from livekit.agents.llm import ToolChoice
+from livekit.agents.llm import ToolChoice, _create_ai_function_info
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, APIConnectOptions
 
 import openai
 from openai.types.chat import ChatCompletionChunk, ChatCompletionMessageParam
 from openai.types.chat.chat_completion_chunk import Choice
 
-from ._oai_api import (
-    build_oai_function_description,
-    create_ai_function_info,
-)
+from ._oai_api import build_oai_function_description
 from .log import logger
 from .models import (
     CerebrasChatModels,
@@ -63,6 +60,8 @@ class LLMOptions:
     temperature: float | None
     parallel_tool_calls: bool | None
     tool_choice: Union[ToolChoice, Literal["auto", "required", "none"]] = "auto"
+    store: bool | None = None
+    metadata: dict[str, str] | None = None
 
 
 class LLM(llm.LLM):
@@ -77,6 +76,8 @@ class LLM(llm.LLM):
         temperature: float | None = None,
         parallel_tool_calls: bool | None = None,
         tool_choice: Union[ToolChoice, Literal["auto", "required", "none"]] = "auto",
+        store: bool | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> None:
         """
         Create a new instance of OpenAI LLM.
@@ -93,6 +94,8 @@ class LLM(llm.LLM):
             temperature=temperature,
             parallel_tool_calls=parallel_tool_calls,
             tool_choice=tool_choice,
+            store=store,
+            metadata=metadata,
         )
         self._client = client or openai.AsyncClient(
             api_key=api_key,
@@ -284,7 +287,7 @@ class LLM(llm.LLM):
     @staticmethod
     def with_fireworks(
         *,
-        model: str = "accounts/fireworks/models/llama-v3p1-70b-instruct",
+        model: str = "accounts/fireworks/models/llama-v3p3-70b-instruct",
         api_key: str | None = None,
         base_url: str | None = "https://api.fireworks.ai/inference/v1",
         client: openai.AsyncClient | None = None,
@@ -729,7 +732,6 @@ class LLMStream(llm.LLMStream):
 
             user = self._user or openai.NOT_GIVEN
             messages = _build_oai_context(self._chat_ctx, id(self))
-
             stream = await self._client.chat.completions.create(
                 messages=messages,
                 model=self._model,
@@ -738,6 +740,8 @@ class LLMStream(llm.LLMStream):
                 stream_options={"include_usage": True},
                 stream=True,
                 user=user,
+                store=self._llm._opts.store,
+                metadata=self._llm._opts.metadata,
                 **opts,
             )
 
@@ -833,7 +837,7 @@ class LLMStream(llm.LLMStream):
             )
             return None
 
-        fnc_info = create_ai_function_info(
+        fnc_info = _create_ai_function_info(
             self._fnc_ctx, self._tool_call_id, self._fnc_name, self._fnc_raw_arguments
         )
 
